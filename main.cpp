@@ -17,7 +17,16 @@
 
 #include "ftxui/component/loop.hpp"
 
+/**
+ TODO:
+  - String retrieval from buffer (right formatted)
+  - Find event name for device
+  - Filter by event devices
+  */
+
 using namespace ftxui;
+typedef std::pair<std::string, std::string> ss_t;
+using deviceInfo_t = std::vector<ss_t>;
 
 std::string eventConverter(input_event *ev)
 {
@@ -103,13 +112,33 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  printf("PID is: %d\n", getpid());
-
   int fd = open("/proc/bus/input/devices", O_RDONLY);
   char buf[4096];
   read(fd, buf, sizeof(buf));
-  std::string str(buf);
   close(fd);
+  std::string str(buf);
+
+  int cursor = -1;
+
+  deviceInfo_t devices;
+  devices.push_back(ss_t{"Devices", ""});
+
+  while (cursor = str.find("Name=\"", cursor + 1) != std::string::npos)
+  {
+    int end_quotation = str.find('\"', cursor);
+    std::string name = str.substr(cursor, end_quotation-cursor);
+    cursor=end_quotation;
+    std::cout << name << std::endl;
+    devices.push_back(ss_t{name, ""});
+  }
+
+  //Allocate device names in a vector that FTXUI supports.
+  std::vector<std::string> deviceNames;
+  deviceNames.reserve(devices.size());
+  for (ss_t device : devices)
+  {
+    deviceNames.push_back(device.first);
+  }
 
   int fdEvent = open("/dev/input/event10", O_RDONLY);
   if (fdEvent == -1) {
@@ -123,12 +152,15 @@ std::atomic<int> touchStrengthVal = 0;
   std::atomic<int> x_pos = 0;
   std::atomic<int> y_pos = 0;
 
-int frame = 0;
-  auto component = Renderer([&]{
+  int device_i = 0;
+  int frame = 0;
+  auto component = Renderer([&]
+  {
     frame++;
-    return vbox({
-      text("TabUtils"),
+    return flexbox({
       //text("Frame:" + std::to_string(frame)),
+      vbox({
+          text("TabUtils"),
       separator(),
       text("Pen status: " + std::string(status ? "Engaged" : "Disengaged")),
       status ? text("Height: " + std::to_string(heightVal)) : text("No pen nearby"),
@@ -136,6 +168,14 @@ int frame = 0;
       separator(),
       text("Last Abs. X: " + std::to_string(x_pos)),
       text("Last Abs. Y: " + std::to_string(y_pos)),
+     }) | border,
+
+      emptyElement() | flex_grow | borderEmpty,
+
+      vbox({
+        Dropdown(&deviceNames, &device_i)->Render(),
+      }),
+
     }) | border;
   });
 
@@ -218,7 +258,7 @@ int frame = 0;
    }
  });
 
-  auto screen = App::FitComponent();
+  auto screen = App::TerminalOutput();
 
 
   /**
