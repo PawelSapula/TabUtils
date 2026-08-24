@@ -211,8 +211,8 @@ std::atomic<int> touchStrengthVal = 0;
       status ? text("Height: " + std::to_string(heightVal)) : text("No pen nearby"),
       touching ? text("Touch Strength: " + std::to_string(touchStrengthVal)) : text("Not touching"),
       separator(),
-      text("Last Abs. X: " + std::to_string(x_pos)),
-      text("Last Abs. Y: " + std::to_string(y_pos)),
+      text("Abs. X: " + std::to_string(x_pos)),
+      text("Abs. Y: " + std::to_string(y_pos)),
         //text(std::to_string(device_i) + " " + std::to_string(fdEvent) + " " +devices.at(device_i).second + std::to_string(getpid())), // For debugging
      }) | border,
 
