@@ -115,9 +115,14 @@ int main(int argc, char *argv[]) {
 
   int fd = open("/proc/bus/input/devices", O_RDONLY);
   char buf[4096];
-  read(fd, buf, sizeof(buf));
+  std::string str;
+  ssize_t bytesRead; // ssize_t can contain negatives, in case of errors
+  while ((bytesRead = read(fd, buf, sizeof(buf))) > 0) {
+  str.append(buf, bytesRead);
+  }
+  std::cout << str << std::endl;
+
   close(fd);
-  std::string str(buf);
 
   int cursor = -1;
 
@@ -144,6 +149,7 @@ int main(int argc, char *argv[]) {
     std::string handleName;
     while (ss >> handleName)
     {
+      std::cout << name << " " << handleName << std::endl;
       if (handleName.find("event") != std::string::npos)
       {
         devices.push_back(ss_t{name, handleName});
@@ -160,10 +166,6 @@ int main(int argc, char *argv[]) {
     deviceNames.push_back(device.first);
   }
 
-  int fdEvent = open("/dev/input/event10", O_RDONLY);
-  if (fdEvent == -1) {
-    return -1;
-  }
 
 std::atomic<bool> status = false;
 std::atomic<bool> touching = false;
@@ -175,11 +177,35 @@ std::atomic<int> touchStrengthVal = 0;
   int device_i = 0;
   int frame = 0;
 
+  DropdownOption option;
+  option.radiobox.entries = &deviceNames;
+  option.radiobox.selected = &device_i;
+
+  auto deviceList = Dropdown(option);
   auto interactive = Container::Vertical({
-    Dropdown(&deviceNames, &device_i),
+    deviceList,
   });
 
-  auto component = Renderer(interactive, [&]
+
+  std::atomic<int> fdEvent = -1;
+  option.radiobox.on_change = [&]
+  {
+    if (device_i == 0)
+    {
+      return;
+    }
+
+    std::string newFd = "/dev/input/" + devices.at(device_i).second;
+    fdEvent = open(newFd.c_str(), O_RDONLY);
+    if (fdEvent == -1)
+    {
+      exit(-1);
+    }
+
+  };
+
+
+  auto component = Renderer(deviceList, [&]
   {
     frame++;
     return flexbox({
@@ -197,7 +223,9 @@ std::atomic<int> touchStrengthVal = 0;
 
       emptyElement() | flex_grow | borderEmpty,
 
-    interactive->Render(),
+      vbox({
+    deviceList->Render(),
+    }),
 
     }) | border;
   });
@@ -215,6 +243,11 @@ std::atomic<int> touchStrengthVal = 0;
 
    while (running)
    {
+     if (fdEvent == -1)
+     {
+       std::this_thread::sleep_for(std::chrono::milliseconds(10));
+     }
+
      int result = poll(&pfd, 1, 100);
 
      if (result > 0 && (pfd.revents & POLLIN)) {
