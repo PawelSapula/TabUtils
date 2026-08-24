@@ -16,6 +16,7 @@
 #include <sys/syscall.h>
 
 #include "ftxui/component/loop.hpp"
+#include "ftxui/component/screen_interactive.hpp"
 
 /**
  TODO:
@@ -117,7 +118,6 @@ int main(int argc, char *argv[]) {
   read(fd, buf, sizeof(buf));
   close(fd);
   std::string str(buf);
-  std::cout << str << std::endl;
 
   int cursor = -1;
 
@@ -157,7 +157,12 @@ std::atomic<int> touchStrengthVal = 0;
 
   int device_i = 0;
   int frame = 0;
-  auto component = Renderer([&]
+
+  auto interactive = Container::Vertical({
+    Dropdown(&deviceNames, &device_i),
+  });
+
+  auto component = Renderer(interactive, [&]
   {
     frame++;
     return flexbox({
@@ -175,9 +180,7 @@ std::atomic<int> touchStrengthVal = 0;
 
       emptyElement() | flex_grow | borderEmpty,
 
-      vbox({
-        Dropdown(&deviceNames, &device_i)->Render(),
-      }),
+    interactive->Render(),
 
     }) | border;
   });
@@ -261,7 +264,7 @@ std::atomic<int> touchStrengthVal = 0;
    }
  });
 
-  auto screen = App::TerminalOutput();
+  auto screen = ScreenInteractive::TerminalOutput();
 
 
   /**
