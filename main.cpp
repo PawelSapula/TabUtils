@@ -117,18 +117,21 @@ int main(int argc, char *argv[]) {
   read(fd, buf, sizeof(buf));
   close(fd);
   std::string str(buf);
+  std::cout << str << std::endl;
 
   int cursor = -1;
 
   deviceInfo_t devices;
   devices.push_back(ss_t{"Devices", ""});
 
-  while (cursor = str.find("Name=\"", cursor + 1) != std::string::npos)
+  while (str.find('N: Name=\"', cursor + 1) != std::string::npos)
   {
-    int end_quotation = str.find('\"', cursor);
+    cursor = str.find('N: Name=\"', cursor + 1);
+    cursor++; // Not include beginning quotation forward
+
+    int end_quotation = str.find('"', cursor);
     std::string name = str.substr(cursor, end_quotation-cursor);
     cursor=end_quotation;
-    std::cout << name << std::endl;
     devices.push_back(ss_t{name, ""});
   }
 
