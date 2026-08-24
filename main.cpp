@@ -18,13 +18,6 @@
 #include "ftxui/component/loop.hpp"
 #include "ftxui/component/screen_interactive.hpp"
 
-/**
- TODO:
-  - String retrieval from buffer (right formatted)
-  - Find event name for device
-  - Filter by event devices
-  */
-
 using namespace ftxui;
 typedef std::pair<std::string, std::string> ss_t;
 using deviceInfo_t = std::vector<ss_t>;
@@ -120,7 +113,6 @@ int main(int argc, char *argv[]) {
   while ((bytesRead = read(fd, buf, sizeof(buf))) > 0) {
   str.append(buf, bytesRead);
   }
-  std::cout << str << std::endl;
 
   close(fd);
 
@@ -149,7 +141,6 @@ int main(int argc, char *argv[]) {
     std::string handleName;
     while (ss >> handleName)
     {
-      std::cout << name << " " << handleName << std::endl;
       if (handleName.find("event") != std::string::npos)
       {
         devices.push_back(ss_t{name, handleName});
@@ -181,15 +172,13 @@ std::atomic<int> touchStrengthVal = 0;
   option.radiobox.entries = &deviceNames;
   option.radiobox.selected = &device_i;
 
-  auto deviceList = Dropdown(option);
-  auto interactive = Container::Vertical({
-    deviceList,
-  });
-
+  //TODO: IMPORTANT
+  //TODO: Make this a function and execute it from the input thread, can cause disruptions in timing.
 
   std::atomic<int> fdEvent = -1;
   option.radiobox.on_change = [&]
   {
+    close(fdEvent); //Important, or else it keeps making new ones. readlink /proc/<this pid>/fd/<fd>
     if (device_i == 0)
     {
       return;
@@ -205,6 +194,11 @@ std::atomic<int> touchStrengthVal = 0;
   };
 
 
+  auto deviceList = Dropdown(option);
+  auto interactive = Container::Vertical({
+    deviceList,
+  });
+
   auto component = Renderer(deviceList, [&]
   {
     frame++;
@@ -219,6 +213,7 @@ std::atomic<int> touchStrengthVal = 0;
       separator(),
       text("Last Abs. X: " + std::to_string(x_pos)),
       text("Last Abs. Y: " + std::to_string(y_pos)),
+        //text(std::to_string(device_i) + " " + std::to_string(fdEvent) + " " +devices.at(device_i).second + std::to_string(getpid())), // For debugging
      }) | border,
 
       emptyElement() | flex_grow | borderEmpty,
@@ -232,27 +227,27 @@ std::atomic<int> touchStrengthVal = 0;
 
   std::atomic<bool> running = true; // Atomic's are thread safe and race free.
 
- std::thread inputThread([&]
+  std::thread inputThread([&]
  {
+    while (fdEvent == -1)
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
    input_event ev;
    std::array<int, 6> data;
 
    pollfd pfd;
-   pfd.fd=fdEvent;
    pfd.events=POLLIN;
 
    while (running)
    {
-     if (fdEvent == -1)
-     {
-       std::this_thread::sleep_for(std::chrono::milliseconds(10));
-     }
-
+     pfd.fd= fdEvent.load();
      int result = poll(&pfd, 1, 100);
 
      if (result > 0 && (pfd.revents & POLLIN)) {
 
-     read(fdEvent, &ev, sizeof(ev));
+     read(pfd.fd, &ev, sizeof(ev));
 
           eventConverterA(&ev, data);
 
