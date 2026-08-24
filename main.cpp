@@ -124,15 +124,32 @@ int main(int argc, char *argv[]) {
   deviceInfo_t devices;
   devices.push_back(ss_t{"Devices", ""});
 
-  while (str.find('N: Name=\"', cursor + 1) != std::string::npos)
+  while (str.find('N: Name=\"', cursor + 1) != std::string::npos) // UNSAFE CODE LOOK BELOW HOW IT SHOULD BE
   {
     cursor = str.find('N: Name=\"', cursor + 1);
     cursor++; // Not include beginning quotation forward
 
     int end_quotation = str.find('"', cursor);
     std::string name = str.substr(cursor, end_quotation-cursor);
-    cursor=end_quotation;
-    devices.push_back(ss_t{name, ""});
+
+    cursor = str.find("H: Handlers=", end_quotation);
+    cursor = str.find('=', cursor);
+    cursor++;
+
+    int handlers = str.find('\n', cursor);
+    std::string eventHandles = str.substr(cursor, handlers-cursor);
+    cursor = handlers + 1;
+
+    std::stringstream ss(eventHandles);
+    std::string handleName;
+    while (ss >> handleName)
+    {
+      if (handleName.find("event") != std::string::npos)
+      {
+        devices.push_back(ss_t{name, handleName});
+      }
+    }
+
   }
 
   //Allocate device names in a vector that FTXUI supports.
