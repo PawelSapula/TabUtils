@@ -5,4 +5,4 @@ Tool made with C++ to manage Wacom drawing tablets.
 ## Absolutely not finished!!!!
 
 # Gallery
-<img width="187" height="206" alt="image" src="https://github.com/user-attachments/assets/b1c1adde-f19a-46ba-ba4a-e34b16c2e218" />
+<img width="595" height="239" alt="image" src="https://github.com/user-attachments/assets/cd2b45c5-da88-431a-823a-86a8b6178811" />
