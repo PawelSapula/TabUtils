@@ -6,7 +6,7 @@
 #include <iostream>
 #include <mutex>
 #include <ostream>
-#include <stdio.h>
+#include <cstdio>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -14,6 +14,7 @@
 #include <linux/input.h>
 #include <sys/poll.h>
 #include <sys/syscall.h>
+#include <libwacom-1.0/libwacom/libwacom.h>
 
 #include "ftxui/component/loop.hpp"
 #include "ftxui/component/screen_interactive.hpp"
@@ -21,43 +22,6 @@
 using namespace ftxui;
 typedef std::pair<std::string, std::string> ss_t;
 using deviceInfo_t = std::vector<ss_t>;
-
-std::string eventConverter(input_event *ev)
-{
-  if (ev->type == EV_ABS && ev->code == REL_X)
-  {
-    return "Absolute X: " + std::to_string(ev->value);
-  }
-  if (ev->type == EV_ABS && ev->code == ABS_Y)
-  {
-    return "Absolute Y: " + std::to_string(ev->value);
-  }
-  if (ev->type == EV_KEY && ev->code == BTN_TOOL_PEN && ev->value == 1)
-  {
-    return "Pen engaged";
-  }
-  if (ev->type == EV_KEY && ev->code == BTN_TOOL_PEN && ev->value == 0)
-  {
-    return "Pen disengaged";
-  }
-  if (ev->type == EV_KEY && ev->code == BTN_TOUCH && ev->value == 1)
-  {
-    return "Pen touching";
-  }
-  if (ev->type == EV_KEY && ev->code == BTN_TOUCH && ev->value == 0)
-  {
-    return "Pen not touching";
-  }
-  if (ev->type == ABS_DISTANCE || ev->code == ABS_DISTANCE) // 25
-  {
-    return "Hover: " + std::to_string(ev->value);
-  }
-  if (ev->type == ABS_PRESSURE || ev->code == ABS_PRESSURE) // 24
-  {
-    return "Touching strength: " + std::to_string(ev->value);
-  }
-  return "";
-}
 
 // Evdev checkout
 void eventConverterA(input_event *ev, std::array<int, 6> &data)
@@ -213,7 +177,6 @@ std::atomic<int> touchStrengthVal = 0;
       separator(),
       text("Abs. X: " + std::to_string(x_pos)),
       text("Abs. Y: " + std::to_string(y_pos)),
-        //text(std::to_string(device_i) + " " + std::to_string(fdEvent) + " " +devices.at(device_i).second + std::to_string(getpid())), // For debugging
      }) | border,
 
       emptyElement() | flex_grow | borderEmpty,
@@ -258,67 +221,11 @@ std::atomic<int> touchStrengthVal = 0;
            x_pos = data[4];
            y_pos = data[5];
 
-       /**std::string typeInfo;
-       std::string codeInfo;
-
-       switch (ev.type)
-       {
-         case EV_SYN:
-         typeInfo = "Synchronous event";
-         break;
-       case EV_KEY:
-         typeInfo = "Key device change event";
-         break;
-       default:
-         typeInfo = std::to_string(ev.code);
-         break;
-       }
-
-       switch (ev.code)
-       {
-       case ABS_DISTANCE:
-         codeInfo = "Distance change";
-         break;
-       case REL_X:
-         codeInfo = "X-Axis";
-         break;
-       case REL_Y:
-         codeInfo = "Y-Axis";
-         break;
-       case 24:
-         codeInfo = "Touching";
-         break;
-       default:
-         codeInfo = std::to_string(ev.code);
-         break;
-       }
-
-       if (ev.type != EV_SYN)
-       {
-         if (std::string formatted = eventConverter(&ev); !formatted.empty())
-         {
-           std::cout << formatted << std::endl;
-           continue;
-         }
-
-         std::cout << (ev.time.tv_sec) << " Type: " << typeInfo << ", Code: " << codeInfo << ", (" << ev.code << ")" << ", Value: " << ev.value << std::endl;
-       }
-       **/
-
      }
    }
  });
 
   auto screen = ScreenInteractive::TerminalOutput();
-
-
-  /**
-  int counter = 0;
-  auto comp = Renderer([&]
-  {
-    return text("coutner" + std::to_string(counter));
-  });
-*/
 
   Loop loop(&screen, component);
 
