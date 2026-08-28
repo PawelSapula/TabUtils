@@ -7,6 +7,7 @@
 #include <mutex>
 #include <ostream>
 #include <cstdio>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -20,43 +21,57 @@
 #include "ftxui/component/screen_interactive.hpp"
 
 using namespace ftxui;
-typedef std::pair<std::string, std::string> ss_t;
-using deviceInfo_t = std::vector<ss_t>;
 
-// Evdev checkout
-void eventConverterA(input_event *ev, std::array<int, 6> &data)
+struct Device
 {
-  if (ev->type == EV_ABS && ev->code == REL_X)
+  std::string name;
+  std::string event;
+  bool placeholder = false;
+};
+
+struct TabletDevice
+{
+  int64_t timestamp;
+  bool isEngaged{};
+  bool hasPressure{};
+  int pressure{};
+  int height{};
+  int x{};
+  int y{};
+};
+
+class FDDevice_IO
+{
+  int m_Handle = -1;
+private:
+  void manageDeviceHandle(Device& device)
   {
-    data[4] = ev->value;
+    if (m_Handle > 0)
+    {
+      close(m_Handle);
+    }
+      std::string fd = "/dev/input/" + device.event;
+      m_Handle = open(fd.c_str(), O_RDONLY);
   }
-  if (ev->type == EV_ABS && ev->code == ABS_Y)
+public:
+  void init(Device& device){manageDeviceHandle(device);}
+  int getHandle() const { return m_Handle;}
+};
+
+void tabletEventConverter(input_event &ev, TabletDevice& tablet)
+{
+  tablet.timestamp = ((int64_t)ev.time.tv_sec*1000) + (ev.time.tv_usec/1000); // ms conversion
+  if (ev.type == EV_ABS)
   {
-    data[5] = ev->value;
+    if (ev.code == REL_X) {tablet.x = ev.value;}
+    if (ev.code == REL_Y) {tablet.y = ev.value;}
+    if (ev.code == ABS_PRESSURE) {tablet.pressure = ev.value;}
+    if (ev.code == ABS_DISTANCE) {tablet.height = ev.value; }
   }
-  if (ev->type == EV_KEY && ev->code == BTN_TOOL_PEN && ev->value == 1)
+  if (ev.type == EV_KEY)
   {
-    data[0] = 1;
-  }
-  if (ev->type == EV_KEY && ev->code == BTN_TOOL_PEN && ev->value == 0)
-  {
-    data[0] = 0;
-  }
-  if (ev->type == EV_KEY && ev->code == BTN_TOUCH && ev->value == 1)
-  {
-    data[1] = 1;
-  }
-  if (ev->type == EV_KEY && ev->code == BTN_TOUCH && ev->value == 0)
-  {
-    data[1] = 0;
-  }
-  if (ev->type == ABS_DISTANCE || ev->code == ABS_DISTANCE) // 25
-  {
-    data[2] = ev->value;
-  }
-  if (ev->type == ABS_PRESSURE || ev->code == ABS_PRESSURE) // 24
-  {
-    data[3] = ev->value;
+    if (ev.code == BTN_TOOL_PEN){tablet.isEngaged = ev.value;}
+    if (ev.code == BTN_TOUCH){tablet.hasPressure = ev.value;}
   }
 }
 
@@ -70,6 +85,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  /**
   int fd = open("/proc/bus/input/devices", O_RDONLY);
   char buf[4096];
   std::string str;
@@ -77,28 +93,33 @@ int main(int argc, char *argv[]) {
   while ((bytesRead = read(fd, buf, sizeof(buf))) > 0) {
   str.append(buf, bytesRead);
   }
+  close(fd) ;
+  */
 
-  close(fd);
+  std::ifstream ifs("/proc/bus/input/devices");
+  std::stringstream buffer;
+  buffer << ifs.rdbuf();
+  std::string device_list(buffer.str());
+
 
   int cursor = -1;
 
-  deviceInfo_t devices;
-  devices.push_back(ss_t{"Devices", ""});
-
-  while (str.find('N: Name=\"', cursor + 1) != std::string::npos) // UNSAFE CODE LOOK BELOW HOW IT SHOULD BE
+  std::vector<Device> devices;
+  devices.push_back(Device{"Device", "", true});
+  while (device_list.find('N: Name=\"', cursor + 1) != std::string::npos) // UNSAFE CODE LOOK BELOW HOW IT SHOULD BE
   {
-    cursor = str.find('N: Name=\"', cursor + 1);
+    cursor = device_list.find('N: Name=\"', cursor + 1);
     cursor++; // Not include beginning quotation forward
 
-    int end_quotation = str.find('"', cursor);
-    std::string name = str.substr(cursor, end_quotation-cursor);
+    int end_quotation = device_list.find('"', cursor);
+    std::string name = device_list.substr(cursor, end_quotation-cursor);
 
-    cursor = str.find("H: Handlers=", end_quotation);
-    cursor = str.find('=', cursor);
+    cursor = device_list.find("H: Handlers=", end_quotation);
+    cursor = device_list.find('=', cursor);
     cursor++;
 
-    int handlers = str.find('\n', cursor);
-    std::string eventHandles = str.substr(cursor, handlers-cursor);
+    int handlers = device_list.find('\n', cursor);
+    std::string eventHandles = device_list.substr(cursor, handlers-cursor);
     cursor = handlers + 1;
 
     std::stringstream ss(eventHandles);
@@ -107,76 +128,41 @@ int main(int argc, char *argv[]) {
     {
       if (handleName.find("event") != std::string::npos)
       {
-        devices.push_back(ss_t{name, handleName});
+        devices.push_back(Device(name, handleName));
       }
     }
 
   }
 
-  //Allocate device names in a vector that FTXUI supports.
+  // Conversion to a string list
   std::vector<std::string> deviceNames;
-  deviceNames.reserve(devices.size());
-  for (ss_t device : devices)
+  for (const Device& device : devices)
   {
-    deviceNames.push_back(device.first);
+    deviceNames.push_back(device.name);
   }
 
 
-std::atomic<bool> status = false;
-std::atomic<bool> touching = false;
-std::atomic<int> heightVal = 0;
-std::atomic<int> touchStrengthVal = 0;
-  std::atomic<int> x_pos = 0;
-  std::atomic<int> y_pos = 0;
 
-  int device_i = 0;
-  int frame = 0;
+ TabletDevice tabletDevice;
+  int iDevice = 0;
+  int64_t polling_rate{};
 
-  DropdownOption option;
-  option.radiobox.entries = &deviceNames;
-  option.radiobox.selected = &device_i;
-
-  //TODO: IMPORTANT
-  //TODO: Make this a function and execute it from the input thread, can cause disruptions in timing.
-
-  std::atomic<int> fdEvent = -1;
-  option.radiobox.on_change = [&]
-  {
-    close(fdEvent); //Important, or else it keeps making new ones. readlink /proc/<this pid>/fd/<fd>
-    if (device_i == 0)
-    {
-      return;
-    }
-
-    std::string newFd = "/dev/input/" + devices.at(device_i).second;
-    fdEvent = open(newFd.c_str(), O_RDONLY);
-    if (fdEvent == -1)
-    {
-      exit(-1);
-    }
-
-  };
-
-
-  auto deviceList = Dropdown(option);
-  auto interactive = Container::Vertical({
-    deviceList,
-  });
-
+  auto deviceList = Dropdown(&deviceNames, &iDevice);
   auto component = Renderer(deviceList, [&]
   {
-    frame++;
-    return flexbox({
+    auto element = flexbox({
       //text("Frame:" + std::to_string(frame)),
       vbox({
           text("TabUtils"),
+          text("Polling rate: " + std::to_string(tabletDevice.timestamp-polling_rate) + "ms"),
       separator(),
-      text("Pen status: " + std::string(status ? "Engaged" : "Disengaged")),
-      status ? text("Height: " + std::to_string(heightVal)) : text("No pen nearby"),
-      touching ? text("Touch Strength: " + std::to_string(touchStrengthVal)) : text("Not touching"),
+      text("Pen status: " + std::string(tabletDevice.isEngaged ? "Engaged" : "Disengaged")),
+      tabletDevice.isEngaged ? text("Height: " + std::to_string(tabletDevice.height)) : text("No pen nearby"),
+      tabletDevice.hasPressure ? text("Pressure Strength: " + std::to_string(tabletDevice.pressure)) : text("No pressure"),
+        tabletDevice.hasPressure ? gauge(tabletDevice.pressure/2047.f) : emptyElement(), // TODO: Delete magic number
       separator(),
-      text("Abs. X: " + std::to_string(x_pos)),
-      text("Abs. Y: " + std::to_string(y_pos)),
+      text("Abs. X: " + std::to_string(tabletDevice.x)),
+      text("Abs. Y: " + std::to_string(tabletDevice.y)),
      }) | border,
 
       emptyElement() | flex_grow | borderEmpty,
@@ -186,40 +172,49 @@ std::atomic<int> touchStrengthVal = 0;
     }),
 
     }) | border;
+    polling_rate = tabletDevice.timestamp;
+    return element;
   });
 
   std::atomic<bool> running = true; // Atomic's are thread safe and race free.
 
   std::thread inputThread([&]
  {
-    while (fdEvent == -1)
+    while (iDevice == 0)
     {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-   input_event ev;
-   std::array<int, 6> data;
+    // Initial load
+    FDDevice_IO fd_io;
+    input_event ev;
+    int prevDevice = iDevice;
 
    pollfd pfd;
-   pfd.events=POLLIN;
+    fd_io.init(devices.at(iDevice));
+    pfd.fd = fd_io.getHandle();
+   pfd.events=POLLIN; // What event to look after
 
    while (running)
    {
-     pfd.fd= fdEvent.load();
+     if (iDevice != prevDevice)
+     {
+       if (Device device = devices.at(iDevice); !device.placeholder)
+       {
+         fd_io.init(devices.at(iDevice));
+         pfd.fd = fd_io.getHandle();
+       }
+
+       prevDevice = iDevice;
+     }
+
      int result = poll(&pfd, 1, 100);
 
-     if (result > 0 && (pfd.revents & POLLIN)) {
+     if (result > 0 && (pfd.revents & POLLIN)) { //Returned events bitwise AND info in
 
      read(pfd.fd, &ev, sizeof(ev));
 
-          eventConverterA(&ev, data);
-
-           status = data[0];
-           touching = data[1];
-           heightVal = data[2];
-           touchStrengthVal = data[3];
-           x_pos = data[4];
-           y_pos = data[5];
+       tabletEventConverter(ev, tabletDevice);
 
      }
    }
@@ -231,7 +226,6 @@ std::atomic<int> touchStrengthVal = 0;
 
   while (!loop.HasQuitted())
   {
-    //counter++;
     screen.RequestAnimationFrame();
     loop.RunOnce();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -239,8 +233,6 @@ std::atomic<int> touchStrengthVal = 0;
 
  running = false;
   inputThread.join();
-
-  close(fdEvent);
 
   return 0;
 }
