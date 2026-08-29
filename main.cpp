@@ -11,11 +11,17 @@
 #include <string>
 #include <thread>
 #include <unistd.h>
+#include <mach/mach.h>
 #include <ftxui/screen/screen.hpp>
+#ifdef __linux__
 #include <linux/input.h>
+#endif
+#ifdef TARGET_OS_MAC
+#include <IOKit/hid/IOHIDManager.h>
+#include <IOKit/hid/IOHIDKeys.h>
+#include <IOKit/hidsystem/IOHIDLib.h>
+#endif
 #include <sys/poll.h>
-#include <sys/syscall.h>
-#include <libwacom-1.0/libwacom/libwacom.h>
 
 #include "ftxui/component/loop.hpp"
 #include "ftxui/component/screen_interactive.hpp"
@@ -58,6 +64,7 @@ public:
   int getHandle() const { return m_Handle;}
 };
 
+#ifdef __linux__
 void tabletEventConverter(input_event &ev, TabletDevice& tablet)
 {
   tablet.timestamp = ((int64_t)ev.time.tv_sec*1000) + (ev.time.tv_usec/1000); // ms conversion
@@ -74,28 +81,76 @@ void tabletEventConverter(input_event &ev, TabletDevice& tablet)
     if (ev.code == BTN_TOUCH){tablet.hasPressure = ev.value;}
   }
 }
-
-int main(int argc, char *argv[]) {
-
-  if (argc > 1) {
-
-    if (strcmp(argv[1], "--help") == 0) {
-      printf("Help");
-      return 0;
-    }
+#endif
+#ifdef TARGET_OS_MAC
+std::vector<Device> getDeviceSpecifications() {
+  IOHIDManagerRef hidManager = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDManagerOptionNone);
+  if (!hidManager) {
+    std::cerr << "Failed to create a HID Manager!" << std::endl;
   }
 
   /**
-  int fd = open("/proc/bus/input/devices", O_RDONLY);
-  char buf[4096];
-  std::string str;
-  ssize_t bytesRead; // ssize_t can contain negatives, in case of errors
-  while ((bytesRead = read(fd, buf, sizeof(buf))) > 0) {
-  str.append(buf, bytesRead);
-  }
-  close(fd) ;
-  */
+    IOHIDAccessType access = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent);
+    if (access != kIOHIDAccessTypeDenied) {
+      std::cerr << "Access permissions not granted for the manager! Attempting request." << std::endl;
+      IOReturn result = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent);
+      if (result != kIOReturnSuccess) {
+        std::cerr << "Failed to obtain permissions. exiting.." << std::endl;
+        exit(-1);
+      }
+      else {
+        std::cerr << "Obtained permissions, continuing." << std::endl;
+      }
+    }
+    */
 
+  IOHIDManagerSetDeviceMatching(hidManager, nullptr);
+  //if (IOReturn result = IOHIDManagerOpen(hidManager, kIOHIDOptionsTypeNone); result != kIOReturnSuccess) {
+  //  std::cerr << "Failed to open HID Manager! [" << mach_error_string(result) << "]" << std::endl;
+   // CFRelease(hidManager);
+  //}
+
+  CFSetRef device_set = IOHIDManagerCopyDevices(hidManager);
+  if (!device_set) {
+    std::cerr << "Failed to access the devices" << std::endl;
+  }
+
+  if (device_set) {
+    std::vector<const void*> values(CFSetGetCount(device_set));
+    CFSetGetValues(device_set, values.data());
+    std::vector<Device> devices;
+
+    for (const void* value : values) {
+      IOHIDDeviceRef device = static_cast<IOHIDDeviceRef>(const_cast<void*>(value));
+      CFTypeRef product = IOHIDDeviceGetProperty(device, CFSTR(kIOHIDProductKey));
+      CFTypeRef manufacturer = IOHIDDeviceGetProperty(device, CFSTR(kIOHIDManufacturerKey));
+      if (!product && !manufacturer) {
+        std::cout << "Properties not retrieved!" << std::endl;
+        continue;
+      }
+      if (product && CFGetTypeID(product) == CFStringGetTypeID()
+        && manufacturer && CFGetTypeID(manufacturer) == CFStringGetTypeID()) {
+        char productBuf[256];
+        char manBuf[256];
+      bool res1 = CFStringGetCString(static_cast<CFStringRef>(product), productBuf, sizeof(productBuf), kCFStringEncodingUTF8) ;
+      bool res2 = CFStringGetCString(static_cast<CFStringRef>(manufacturer), manBuf, sizeof(manBuf), kCFStringEncodingUTF8);
+        if (res1 && res2) {
+          std::string name = std::string(productBuf) + ", " + std::string(manBuf);
+          devices.push_back(Device{name, " "});
+        }
+      }
+    }
+
+
+    CFRelease(hidManager);
+    return devices;
+  }
+
+}
+#endif
+
+#ifdef __linux__
+std::vector<Devices> getDeviceSpecifications() {
   std::ifstream ifs("/proc/bus/input/devices");
   std::stringstream buffer;
   buffer << ifs.rdbuf();
@@ -105,7 +160,6 @@ int main(int argc, char *argv[]) {
   int cursor = -1;
 
   std::vector<Device> devices;
-  devices.push_back(Device{"Device", "", true});
   while (device_list.find('N: Name=\"', cursor + 1) != std::string::npos) // UNSAFE CODE LOOK BELOW HOW IT SHOULD BE
   {
     cursor = device_list.find('N: Name=\"', cursor + 1);
@@ -133,6 +187,37 @@ int main(int argc, char *argv[]) {
     }
 
   }
+  return devices;
+}
+#endif
+
+int main(int argc, char *argv[]) {
+
+  if (argc > 1) {
+
+    if (strcmp(argv[1], "--help") == 0) {
+      printf("Help");
+      return 0;
+    }
+  }
+
+  /**
+  int fd = open("/proc/bus/input/devices", O_RDONLY);
+  char buf[4096];
+  std::string str;
+  ssize_t bytesRead; // ssize_t can contain negatives, in case of errors
+  while ((bytesRead = read(fd, buf, sizeof(buf))) > 0) {
+  str.append(buf, bytesRead);
+  }
+  close(fd) ;
+  */
+
+
+  std::vector<Device> devices;
+  std::vector obtainedDevices(getDeviceSpecifications());
+  devices.push_back(Device{"Device", " ", true});
+  devices.reserve(devices.size() + obtainedDevices.size());
+  devices.insert(devices.end(), obtainedDevices.begin(), obtainedDevices.end());
 
   // Conversion to a string list
   std::vector<std::string> deviceNames;
@@ -187,7 +272,7 @@ int main(int argc, char *argv[]) {
 
     // Initial load
     FDDevice_IO fd_io;
-    input_event ev;
+    //input_event ev;
     int prevDevice = iDevice;
 
    pollfd pfd;
@@ -212,9 +297,9 @@ int main(int argc, char *argv[]) {
 
      if (result > 0 && (pfd.revents & POLLIN)) { //Returned events bitwise AND info in
 
-     read(pfd.fd, &ev, sizeof(ev));
+     //read(pfd.fd, &ev, sizeof(ev));
 
-       tabletEventConverter(ev, tabletDevice);
+       //tabletEventConverter(ev, tabletDevice);
 
      }
    }
