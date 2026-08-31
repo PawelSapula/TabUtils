@@ -13,15 +13,17 @@ FetchContent_Declare(ftxui
  
 FetchContent_MakeAvailable(ftxui)
  
-add_executable(TabUtils main.cpp)
+add_executable(TabUtils main.cpp
+        type_utils.cpp
+        type_utils.h)
 
 if(APPLE)
-    find_library(IOKIT_FRAMEWORK IOKit REQUIRED)
     find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
+    find_library(IOKIT_FRAMEWORK IOKit REQUIRED)
 
     target_link_libraries(TabUtils PRIVATE
-            ${IOKIT_FRAMEWORK}
             ${COREFOUNDATION_FRAMEWORK}
+            ${IOKIT_FRAMEWORK}
     )
 endif()
 
