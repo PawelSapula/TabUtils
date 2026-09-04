@@ -12,17 +12,21 @@
 
 struct Device {
     std::string name;
+
+    Device(std::string name) : name(name) {}
+    virtual ~Device() = default; // Allow dynamic casting w. destructor
 };
 
 #ifdef __linux__
-struct DeviceLinux : Device {
-    std::string eventFD;
+struct LinuxDevice : Device {
+    std::string eventHandle;
 };
 #endif
 
 #ifdef TARGET_OS_MAC
 struct MacDevice : Device {
-    IOHIDDeviceRef deviceRef;
+    const IOHIDDeviceRef deviceRef;
+    MacDevice(std::string name, const IOHIDDeviceRef deviceRef) : Device(name), deviceRef(deviceRef) {}
 };
 #endif
 
@@ -30,7 +34,7 @@ struct DeviceInfo {
     int64_t timestamp;
 };
 
-struct TabletDeviceInfo {
+struct TabletDeviceInfo : DeviceInfo{
     bool isEngaged{};
     bool hasPressure{};
     int pressure{};

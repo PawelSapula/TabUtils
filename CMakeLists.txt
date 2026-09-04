@@ -16,8 +16,9 @@ FetchContent_MakeAvailable(ftxui)
 add_executable(TabUtils main.cpp
         type_utils.cpp
         type_utils.h
-        CDevice.cpp
-        CDevice.h)
+        CDevice.h
+        CManager.cpp
+        CManager.h)
 
 if(APPLE)
     find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
