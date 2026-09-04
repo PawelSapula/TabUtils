@@ -13,6 +13,8 @@
 #include <unistd.h>
 #include <mach/mach.h>
 #include <ftxui/screen/screen.hpp>
+
+#include "CManager.h"
 #ifdef __linux__
 #include <linux/input.h>
 #endif
@@ -29,22 +31,15 @@
 
 using namespace ftxui;
 
-struct Device {
-    std::string name;
-    std::string event;
-    bool placeholder = false;
-};
+#define _TUDEBUG 1
+#if _TUDEBUG == 1
+std::string sTUDebug{};
+#define DEBUG_SHOW(str)  sTUDebug = str;
+#else
+#define DEBUG_SHOW()
+#endif
 
-struct TabletDevice {
-    int64_t timestamp;
-    bool isEngaged{};
-    bool hasPressure{};
-    int pressure{};
-    int height{};
-    int x{};
-    int y{};
-};
-
+/**
 class FDDevice_IO {
     int m_Handle = -1;
 
@@ -103,7 +98,8 @@ void valCallback(
     std::cout << value << std::endl;
 }
 
-
+*/
+/**
 std::vector<Device> getDeviceSpecifications() {
     IOHIDManagerRef hidManager = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDManagerOptionNone);
     if (!hidManager) {
@@ -166,6 +162,8 @@ std::vector<Device> getDeviceSpecifications() {
       IOObjectRelease(serialPortIterator);
     */
 
+
+    /**
     IOHIDDeviceRef wacomDevice{};
     for (const void *value: values) {
         IOHIDDeviceRef device = static_cast<IOHIDDeviceRef>(const_cast<void *>(value));
@@ -202,6 +200,7 @@ std::vector<Device> getDeviceSpecifications() {
     if (!wacomDevice) {
         exit(-1);
     }
+    */
 
     /** TODO: For now only System settings -> Privacy -> Input privileges work. Test around so that the user dont have to do it, this method may be necessary.
     IOHIDAccessType access = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent);
@@ -219,6 +218,7 @@ std::vector<Device> getDeviceSpecifications() {
     */
 
 
+        /*
     uint8_t report[512]{};
     CFIndex report_length = long(report);
     unsigned char report_id = 0;
@@ -228,6 +228,7 @@ std::vector<Device> getDeviceSpecifications() {
         std::cout << "Failed to open device! [" << mach_error_string(res_open) << std::endl;
         exit(-1);
     }
+    */
     /**
 
     CFArrayRef elementArray = IOHIDDeviceCopyMatchingElements(device, nullptr, kIOHIDOptionsTypeNone);
@@ -256,6 +257,7 @@ std::vector<Device> getDeviceSpecifications() {
     }
     */
 
+        /*
     IOHIDDeviceRegisterInputReportCallback(wacomDevice, report, report_length, callback, nullptr);
     // Own context nullptr
     //IOHIDDeviceRegisterInputValueCallback(device,  valCallback, nullptr); // Own context nullptr
@@ -307,10 +309,8 @@ std::vector<Devices> getDeviceSpecifications() {
     return devices;
 }
 #endif
-
+*/
 int main(int argc, char *argv[]) {
-    getDeviceSpecifications();
-    exit(-22);
 
     if (argc > 1) {
         if (strcmp(argv[1], "--help") == 0) {
@@ -319,36 +319,35 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /**
-    int fd = open("/proc/bus/input/devices", O_RDONLY);
-    char buf[4096];
-    std::string str;
-    ssize_t bytesRead; // ssize_t can contain negatives, in case of errors
-    while ((bytesRead = read(fd, buf, sizeof(buf))) > 0) {
-    str.append(buf, bytesRead);
-    }
-    close(fd) ;
-    */
-
-
-    std::vector<Device> devices;
-    std::vector obtainedDevices(getDeviceSpecifications());
-    devices.push_back(Device{"Device", " ", true});
-    devices.reserve(devices.size() + obtainedDevices.size());
-    devices.insert(devices.end(), obtainedDevices.begin(), obtainedDevices.end());
+    DeviceManager::getDeviceList();
+    //std::vector obtainedDevices(getDeviceSpecifications());
+    //devices.push_back(Device{"Device", " ", true});
+    //devices.reserve(devices.size() + obtainedDevices.size());
+    //devices.insert(devices.end(), obtainedDevices.begin(), obtainedDevices.end());
 
     // Conversion to a string list
     std::vector<std::string> deviceNames;
-    for (const Device &device: devices) {
-        deviceNames.push_back(device.name);
+    for (std::unique_ptr<Device>& device : DeviceManager::m_Devices) {
+        deviceNames.push_back(device->name);
     }
 
 
-    TabletDevice tabletDevice;
+    TabletDeviceInfo tabletDevice{};
     int iDevice = 0;
     int64_t polling_rate{};
 
-    auto deviceList = Dropdown(&deviceNames, &iDevice);
+    DropdownOption option;
+    option.radiobox.entries = &deviceNames;
+    option.radiobox.selected = &iDevice;
+
+    //option.radiobox.on_change = [iDevice, &db] {
+    //    Device& dev = *DeviceManager::m_Devices.at(iDevice);
+    //    std::thread handleThread = DeviceManager::createHandleThread(dev);
+    //    handleThread.detach();
+    //    db = dev.name;
+    //};
+
+    auto deviceList = Dropdown(option);
     auto component = Renderer(deviceList, [&] {
         auto element = flexbox({
                            //text("Frame:" + std::to_string(frame)),
@@ -370,6 +369,11 @@ int main(int argc, char *argv[]) {
                                text("Abs. Y: " + std::to_string(tabletDevice.y)),
                            }) | border,
 
+                            text("Device Buffer: " + DeviceManager::m_Buffer) | border,
+#if _TUDEBUG == 1
+                            text("Debug: " + sTUDebug),
+#endif
+
                            emptyElement() | flex_grow | borderEmpty,
 
                            vbox({
@@ -381,8 +385,32 @@ int main(int argc, char *argv[]) {
         return element;
     });
 
-    std::atomic<bool> running = true; // Atomic's are thread safe and race free.
 
+    std::thread deviceListenerThread( [&]{
+        int prevDevice = iDevice;
+        std::thread currentHandleThread;
+
+        while (true) {
+
+            if (iDevice != prevDevice) {
+                if (currentHandleThread.joinable() ) {
+                    DeviceManager::cleanupHandleThread();
+                    currentHandleThread.join();
+                }
+
+                Device& dev = *DeviceManager::m_Devices.at(iDevice);
+                //DEBUG_SHOW(dev.name + " " + std::to_string(iDevice) + " " + std::to_string(prevDevice));
+                currentHandleThread = DeviceManager::createHandleThread(dev);
+
+                prevDevice = iDevice;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+    });
+    std::atomic<bool> running = true; // Atomic's are thread safe and race free.
+/**
     std::thread inputThread([&] {
         while (iDevice == 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -419,6 +447,7 @@ int main(int argc, char *argv[]) {
             }
         }
     });
+*/
 
     auto screen = ScreenInteractive::TerminalOutput();
 
@@ -431,7 +460,7 @@ int main(int argc, char *argv[]) {
     }
 
     running = false;
-    inputThread.join();
+    //inputThread.join();
 
     return 0;
 }
