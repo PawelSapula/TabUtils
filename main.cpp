@@ -11,7 +11,6 @@
 #include <string>
 #include <thread>
 #include <unistd.h>
-#include <mach/mach.h>
 #include <ftxui/screen/screen.hpp>
 
 #include "CManager.h"
@@ -23,6 +22,7 @@
 #include <IOKit/hidsystem/IOHIDLib.h>
 #include <IOKit/serial/IOSerialKeys.h>
 #include <IOKit/serial/ioss.h>
+#include <mach/mach.h>
 #endif
 #include <sys/poll.h>
 #include "type_utils.h"
@@ -349,6 +349,11 @@ int main(int argc, char *argv[]) {
 
     auto deviceList = Dropdown(option);
     auto component = Renderer(deviceList, [&] {
+        std::string buffer;
+        {
+            std::lock_guard lock(DeviceManager::m_Buffer_mutex);
+            buffer = DeviceManager::m_Buffer;
+        }
         auto element = flexbox({
                            //text("Frame:" + std::to_string(frame)),
                            vbox({
@@ -369,7 +374,7 @@ int main(int argc, char *argv[]) {
                                text("Abs. Y: " + std::to_string(tabletDevice.y)),
                            }) | border,
 
-                            text("Device Buffer: " + DeviceManager::m_Buffer) | border,
+                            text("Device Buffer: " + buffer ) | border,
 #if _TUDEBUG == 1
                             text("Debug: " + sTUDebug),
 #endif
@@ -399,7 +404,7 @@ int main(int argc, char *argv[]) {
                 }
 
                 Device& dev = *DeviceManager::m_Devices.at(iDevice);
-                //DEBUG_SHOW(dev.name + " " + std::to_string(iDevice) + " " + std::to_string(prevDevice));
+                DEBUG_SHOW(dev.name + " " + std::to_string(iDevice) + " " + std::to_string(prevDevice));
                 currentHandleThread = DeviceManager::createHandleThread(dev);
 
                 prevDevice = iDevice;

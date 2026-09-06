@@ -20,6 +20,8 @@ struct Device {
 #ifdef __linux__
 struct LinuxDevice : Device {
     std::string eventHandle;
+
+    LinuxDevice(std::string name, std::string eventHandle) : Device(name), eventHandle(eventHandle) {};
 };
 #endif
 

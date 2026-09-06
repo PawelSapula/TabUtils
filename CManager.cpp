@@ -15,11 +15,10 @@ static std::vector<LinuxDevice> getSystemDeviceList() {
 
     int cursor = -1;
 
-    std::vector<Device> devices{};
-    while (device_list.find("N: Name=", cursor + 1) != std::string::npos) // UNSAFE CODE LOOK BELOW HOW IT SHOULD BE
+    std::vector<LinuxDevice> devices{};
+    while (device_list.find('N: Name=\"', cursor + 1) != std::string::npos) // UNSAFE CODE LOOK BELOW HOW IT SHOULD BE
     {
-        cursor = device_list.find("N: Name=", cursor + 1);
-        cursor = device_list.find('='), cursor;
+        cursor = device_list.find('N: Name=\"', cursor + 1);
         cursor++; // Not include beginning quotation forward
 
         int end_quotation = device_list.find('"', cursor);
@@ -37,35 +36,57 @@ static std::vector<LinuxDevice> getSystemDeviceList() {
         std::string handleName;
         while (ss >> handleName) {
             if (handleName.find("event") != std::string::npos) {
-                devices.push_back(LinuxDevice(name, handleName));
+                LinuxDevice device(name, handleName);
+                devices.push_back(device);
             }
         }
     }
     return devices;
 }
-static std::thread createSystemHandleThread(LinuxDevice& device) {
+static void createSystemHandleThread(Device& dev) {
+    LinuxDevice& device = dynamic_cast<LinuxDevice&>(dev);
     std::string fd = "/dev/input/" + device.eventHandle;
 
-    int handle = open(fd.c_str(), O_RDONLY);
-    input_event ev;
+    int deviceHandle = open(fd.c_str(), O_RDONLY);
+    DeviceManager::m_RunLoop = true; // Set flag for thread start.
+
+    input_event ev{};
 
     pollfd pfd;
-    pfd.fd = handle;
+    pfd.fd = deviceHandle;
     pfd.events = POLLIN; // What event to look after
 
-    while (running) {
+    int counter = 0;
+    while (DeviceManager::m_RunLoop) {
 
         int result = poll(&pfd, 1, 100);
 
         if (result > 0 && (pfd.revents & POLLIN)) {
             //Returned events bitwise AND info in
+        ssize_t res = read(pfd.fd, &ev, sizeof(ev));
+        if (res == sizeof(ev))
+        {
+            if (ev.type == EV_SYN)
+            {
+                continue;
+            }
 
-            input_event ev = read(pfd.fd, &ev, sizeof(ev));
-            std::cout << ev << "/n";
-
+            std::string buf = "Time: " + std::to_string(ev.time.tv_usec) + " T: " + std::to_string(ev.type) + " C: " + std::to_string(ev.code) + " V: " + std::to_string(ev.value);
+            {
+                std::lock_guard lock(DeviceManager::m_Buffer_mutex);
+                DeviceManager::m_Buffer = buf;
+            }
         }
     }
+    }
 
+    close(deviceHandle);
+
+}
+
+static void cleanupSystemHandleThread()
+{
+    DeviceManager::m_RunLoop = false;
 }
 #endif
 
@@ -147,7 +168,10 @@ static void createSystemHandleThread(Device &dev) {
             for (CFIndex i = 0; i < reportLength; i++) {
                 buf.append(" " + std::to_string(static_cast<int>(report[i])));
             }
-            DeviceManager::m_Buffer = buf;
+            {
+                    std::lock_guard lock(DeviceManager::m_Buffer_mutex);
+                DeviceManager::m_Buffer = buf;
+            }
 
         }
         , nullptr); // Own context nullptr
@@ -167,6 +191,9 @@ static void cleanupSystemHandleThread() {
 #endif
 
 
+#ifdef __linux__
+bool DeviceManager::m_RunLoop;
+#endif
 #ifdef TARGET_OS_MAC
 IOHIDManagerRef DeviceManager::m_HidManager;
 CFRunLoopRef DeviceManager::m_RunLoop;
@@ -174,6 +201,7 @@ CFRunLoopRef DeviceManager::m_RunLoop;
 
 std::vector<std::unique_ptr<Device>> DeviceManager::m_Devices{};
 std::string DeviceManager::m_Buffer{};
+std::mutex DeviceManager::m_Buffer_mutex;
 
 void DeviceManager::getDeviceList() {
         const auto sysDevices = getSystemDeviceList();

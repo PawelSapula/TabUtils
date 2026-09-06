@@ -4,6 +4,7 @@
 
 #include "type_utils.h"
 
+#ifdef TARGET_OS_MAC
 std::optional<std::string> convertTypeRef(CFTypeRef& ref) {
     char buf[256]{};
     long long number{0xDEAD}; // TODO: Unsafe, fix later
@@ -27,3 +28,4 @@ std::optional<std::string> convertTypeRef(CFTypeRef& ref) {
     }
     return std::nullopt;
 }
+#endif
