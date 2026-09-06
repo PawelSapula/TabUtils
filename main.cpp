@@ -33,8 +33,8 @@ using namespace ftxui;
 
 #define _TUDEBUG 1
 #if _TUDEBUG == 1
-std::string sTUDebug{};
-#define DEBUG_SHOW(str)  sTUDebug = str;
+std::string sDebug{};
+#define DEBUG_SHOW(str)  sDebug = str;
 #else
 #define DEBUG_SHOW()
 #endif
@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
         }
         auto element = flexbox({
                            vbox({
-                               text("TabUtils"),
+                               text("USBUtils"),
                                text("Polling rate: " + std::to_string(tabletDevice.timestamp - polling_rate) + "ms"),
                                separator(),
                                text("Pen status: " + std::string(tabletDevice.isEngaged ? "Engaged" : "Disengaged")),
@@ -105,7 +105,7 @@ int main(int argc, char *argv[]) {
 
                             text("Device Buffer: " + buffer ) | border,
 #if _TUDEBUG == 1
-                            text("Debug: " + sTUDebug),
+                            text("Debug: " + sDebug),
 #endif
 
                            emptyElement() | flex_grow | borderEmpty,

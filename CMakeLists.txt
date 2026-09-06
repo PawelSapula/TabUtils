@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-project(TabUtils)
+project(USBUtils)
 
 include(FetchContent)
 
@@ -13,7 +13,7 @@ FetchContent_Declare(ftxui
  
 FetchContent_MakeAvailable(ftxui)
  
-add_executable(TabUtils main.cpp
+add_executable(USBUtils main.cpp
         type_utils.cpp
         type_utils.h
         CDevice.h
@@ -24,13 +24,13 @@ if(APPLE)
     find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
     find_library(IOKIT_FRAMEWORK IOKit REQUIRED)
 
-    target_link_libraries(TabUtils PRIVATE
+    target_link_libraries(USBUtils PRIVATE
             ${COREFOUNDATION_FRAMEWORK}
             ${IOKIT_FRAMEWORK}
     )
 endif()
 
-target_link_libraries(TabUtils
+target_link_libraries(USBUtils
   PRIVATE ftxui::screen
   PRIVATE ftxui::dom
   PRIVATE ftxui::component
