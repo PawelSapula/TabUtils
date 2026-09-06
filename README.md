@@ -4,6 +4,7 @@ Tool for reading raw state of a USB Device.
 # Summary 
 
 Tool made with C++ utilising raw system libraries to obtain USB Device information (Often called HID - Human Interface Device).<br>
+Originally ment to be a graphical-tablet only management app. <br><br>
 Tested with Linux 7+ kernel and MacOS Tahoe 26.
 
 > [!IMPORTANT]
