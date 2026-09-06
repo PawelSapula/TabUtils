@@ -18,7 +18,9 @@ add_executable(USBUtils main.cpp
         type_utils.h
         CDevice.h
         CManager.cpp
-        CManager.h)
+        CManager.h
+        CReportDescriptor.cpp
+        CReportDescriptor.h)
 
 if(APPLE)
     find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
